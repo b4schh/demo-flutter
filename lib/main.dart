@@ -5,14 +5,13 @@ import 'screens/home_screen.dart';
 // Đây là entry point của Flutter application
 // main() function là điểm khởi đầu của mọi Dart program
 
-/// Main function - Entry point của app
 /// 
 /// Tại sao dùng async main()?
 /// - Cần await loadTheme() trước khi chạy app
 /// - Đảm bảo theme được load từ SharedPreferences trước khi build UI
 /// - Nếu không dùng async -> theme sẽ bị delay, flash màn hình
 void main() async {
-  // STEP 1: FLUTTER BINDINGS INITIALIZATION
+  // Bước 1: Khởi tạo các ràng buộc của Flutter
   
   // Lưu ý khi dùng async trong main()
   // ensureInitialized() đảm bảo Flutter framework đã sẵn sàng
@@ -22,9 +21,10 @@ void main() async {
   // - Sqflite
   // - Path Provider
   // ... và các plugin khác cần native code
+  // ensureInitialized() đảm bảo Flutter engine và plugin system sẵn sàng trước khi sử dụng các API phụ thuộc platform.
   WidgetsFlutterBinding.ensureInitialized();
 
-  // STEP 2: INITIALIZE SERVICES
+  // Bước 2: Khởi tạo các dịch vụ
   
   // Load theme từ SharedPreferences
   // AWAIT để đợi load theme xong trước khi chạy app
@@ -34,7 +34,7 @@ void main() async {
   
   print('✅ App initialized successfully');
 
-  // STEP 3: RUN APP
+  // Bước 3: Chạy ứng dụng
   
   // runApp() là function bắt buộc của Flutter
   // Nhận một Widget làm root của app
@@ -65,12 +65,14 @@ class _MyAppState extends State<MyApp> {
   
   // Hàm để toggle theme
   // Được gọi từ HomeScreen khi user bấm nút
-  void _toggleTheme() {
+  Future<void> _toggleTheme() async {
     setState(() {
       _isDarkMode = !_isDarkMode;
     });
-    // Lưu vào SharedPreferences
-    ThemeService.saveThemePreference(_isDarkMode);
+    // Lưu vào SharedPreferences với await để đảm bảo được save
+    // Rất quan trọng trên Web và Desktop!
+    await ThemeService.saveThemePreference(_isDarkMode);
+    print('🔄 Theme toggled and saved: ${_isDarkMode ? "Dark" : "Light"}');
   }
 
   @override

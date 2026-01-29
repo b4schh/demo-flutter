@@ -14,7 +14,7 @@ class ThemeService {
     primarySwatch: Colors.blue,
     scaffoldBackgroundColor: Colors.white,
     appBarTheme: const AppBarTheme(
-      backgroundColor: Colors.blue,
+      backgroundColor: Color.fromARGB(255, 219, 224, 228),
       foregroundColor: Colors.white,
       elevation: 2,
     ),
@@ -69,12 +69,13 @@ class ThemeService {
       // Đọc boolean, nếu không tồn tại trả về false (default)
       final isDarkMode = prefs.getBool(_themeKey) ?? false;
 
-      print('✅ Theme loaded: ${isDarkMode ? "Dark" : "Light"} Mode');
+      print('✅ Theme được tải từ storage: ${isDarkMode ? "Dark" : "Light"} Mode');
+      print('📂 Storage key: $_themeKey, Value: $isDarkMode');
       
       return isDarkMode;
     } catch (e) {
-      print('❌ Error loading theme: $e');
-      return false; // Default to Light Mode on error
+      print('❌ Lỗi khi tải theme: $e');
+      return false;
     }
   }
 
@@ -87,11 +88,17 @@ class ThemeService {
   static Future<void> saveThemePreference(bool isDarkMode) async {
     try {
       final prefs = await SharedPreferences.getInstance();
-      await prefs.setBool(_themeKey, isDarkMode);
+      final result = await prefs.setBool(_themeKey, isDarkMode);
 
-      print('✅ Theme saved: ${isDarkMode ? "Dark" : "Light"} Mode');
+      if (result) {
+        print('✅ Lưu theme thành công: ${isDarkMode ? "Dark" : "Light"} Mode');
+        print('📂 Storage key: $_themeKey, Value: $isDarkMode');
+        
+      } else {
+        print('⚠️ Result = false (theme có thể không được lưu)');
+      }
     } catch (e) {
-      print('❌ Error saving theme: $e');
+      print('❌ Lỗi khi lưu theme: $e');
     }
   }
 
