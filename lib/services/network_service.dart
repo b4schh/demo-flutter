@@ -3,14 +3,22 @@ import 'package:http/http.dart' as http;
 import 'package:dio/dio.dart';
 import '../models/post_manual.dart';
 import '../models/user_auto.dart';
+import 'token_service.dart';
+import 'auth_interceptor.dart';
+import 'dio_error_handler.dart';
 
 // Class này demo SỰ KHÁC BIỆT giữa 2 thư viện networking:
 // 1. http - Thư viện HTTP cơ bản từ Dart team
 // 2. Dio - Thư viện HTTP mạnh mẽ, feature-rich cho production
+// 3. Cách tích hợp TOKEN AUTHENTICATION với Dio (dùng TokenService + AuthInterceptor)
+// 4. Cách xử lý ERROR tập trung với DioErrorHandler (không cần viết lại try-catch)
 
 class NetworkService {
   // Base URL của JSONPlaceholder API (fake REST API for testing)
   static const String baseUrl = 'https://jsonplaceholder.typicode.com';
+  
+  // TokenService instance để quản lý token
+  final TokenService tokenService = TokenService();
 
   // PHẦN 1: SỬ DỤNG THƯ VIỆN 'http' 
   Future<List<Post>> fetchPostsWithHttp() async {
@@ -66,14 +74,17 @@ class NetworkService {
       headers: {
         'Content-Type': 'application/json',
         'Accept': 'application/json',
-        // Có thể thêm auth token ở đây: 'Authorization': 'Bearer $token'
+        // Token sẽ được thêm động qua AuthInterceptor
       },
       
       // Ưu điểm 4: Response Type
       responseType: ResponseType.json,
     ),
-  )..interceptors.add(
-      // Ưu điểm 5: INTERCEPTORS - Log tự động mọi request/response
+  )..interceptors.addAll([
+      // INTERCEPTOR 1: Tự động thêm TOKEN vào header (từ file riêng)
+      AuthInterceptor(tokenService),
+      
+      // INTERCEPTOR 2: Log tự động mọi request/response
       LogInterceptor(
         request: true,          // Log request details
         requestHeader: true,    // Log request headers
@@ -86,7 +97,7 @@ class NetworkService {
           print('🌐 DIO LOG: $log');
         },
       ),
-    );
+    ]);
 
   Future<List<User>> fetchUsersWithDio() async {
     try {
@@ -103,31 +114,152 @@ class NetworkService {
       // Convert JSON thành User objects (dùng auto-generated fromJson)
       return jsonList.map((json) => User.fromJson(json)).toList();
       
-    } on DioException catch (e) {
-      // DioException cung cấp nhiều thông tin để debug
-      print('❌ Dio Error Details:');
-      print('   - Type: ${e.type}'); // Loại lỗi (timeout, cancel, response...)
-      print('   - Message: ${e.message}');
-      print('   - Status Code: ${e.response?.statusCode}');
-      print('   - Response Data: ${e.response?.data}');
-      print('   - Request URL: ${e.requestOptions.uri}');
-      
-      // Có thể xử lý từng loại lỗi cụ thể
-      switch (e.type) {
-        case DioExceptionType.connectionTimeout:
-          throw Exception('Kết nối timeout - Kiểm tra mạng');
-        case DioExceptionType.receiveTimeout:
-          throw Exception('Nhận dữ liệu timeout - Server phản hồi chậm');
-        case DioExceptionType.badResponse:
-          throw Exception('Server lỗi: ${e.response?.statusCode}');
-        case DioExceptionType.cancel:
-          throw Exception('Request bị hủy');
-        default:
-          throw Exception('Network error: ${e.message}');
-      }
     } catch (e) {
-      print('❌ Unexpected error: $e');
-      rethrow;
+      // SỬ DỤNG DioErrorHandler - Không cần viết lại logic xử lý lỗi
+      throw DioErrorHandler.handle(
+        e,
+        customMessage: 'Không thể tải danh sách người dùng',
+      );
     }
   }
+
+  // ============================================================================
+  // CÁCH VIẾT TỐT HƠN: Dùng handleApiCall helper (không cần try-catch)
+  // ============================================================================
+
+  /// Ví dụ API với handleApiCall - Code ngắn gọn nhất
+  /// 
+  /// LỢI ÍCH:
+  /// - Không cần try-catch
+  /// - Không cần check response
+  /// - Chỉ focus vào logic parse data
+  /// - Error handling tự động
+  Future<List<User>> fetchUsersSimplified() async {
+    return await DioErrorHandler.handleApiCall(
+      apiCall: () => _dio.get('/users'),
+      parser: (data) {
+        final List<dynamic> jsonList = data;
+        return jsonList.map((json) => User.fromJson(json)).toList();
+      },
+      customErrorMessage: 'Không thể tải danh sách người dùng',
+    );
+  }
+
+  /// Ví dụ GET một user theo ID
+  Future<User> getUserById(int id) async {
+    return await DioErrorHandler.handleApiCall(
+      apiCall: () => _dio.get('/users/$id'),
+      parser: (data) => User.fromJson(data),
+      customErrorMessage: 'Không thể tải thông tin người dùng',
+    );
+  }
+
+  /// Ví dụ POST - Tạo user mới
+  Future<User> createUser({
+    required String name,
+    required String email,
+  }) async {
+    return await DioErrorHandler.handleApiCall(
+      apiCall: () => _dio.post(
+        '/users',
+        data: {
+          'name': name,
+          'email': email,
+        },
+      ),
+      parser: (data) => User.fromJson(data),
+      customErrorMessage: 'Không thể tạo người dùng mới',
+    );
+  }
+
+  /// Ví dụ PUT - Update user
+  Future<User> updateUser({
+    required int id,
+    required String name,
+    required String email,
+  }) async {
+    return await DioErrorHandler.handleApiCall(
+      apiCall: () => _dio.put(
+        '/users/$id',
+        data: {
+          'name': name,
+          'email': email,
+        },
+      ),
+      parser: (data) => User.fromJson(data),
+      customErrorMessage: 'Không thể cập nhật người dùng',
+    );
+  }
+
+  /// Ví dụ DELETE - Xóa user
+  Future<void> deleteUser(int id) async {
+    return await DioErrorHandler.handleApiCall(
+      apiCall: () => _dio.delete('/users/$id'),
+      parser: (_) {}, // DELETE thường không trả về data
+      customErrorMessage: 'Không thể xóa người dùng',
+    );
+  }
+
+  /// Ví dụ với query parameters
+  Future<List<Post>> getPostsByUserId(int userId) async {
+    return await DioErrorHandler.handleApiCall(
+      apiCall: () => _dio.get(
+        '/posts',
+        queryParameters: {'userId': userId},
+      ),
+      parser: (data) {
+        final List<dynamic> jsonList = data;
+        return jsonList.map((json) => Post.fromJson(json)).toList();
+      },
+      customErrorMessage: 'Không thể tải bài viết của người dùng',
+    );
+  }
+
+  // ============================================================================
+  // PHẦN 3: UPLOAD FILE với Dio
+  // ============================================================================
+
+  /// Ví dụ 1: Upload 1 FILE đơn giản
+  /// 
+  /// CÁCH DÙNG:
+  /// ```dart
+  /// import 'package:image_picker/image_picker.dart';
+  /// 
+  /// final picker = ImagePicker();
+  /// final image = await picker.pickImage(source: ImageSource.gallery);
+  /// 
+  /// if (image != null) {
+  ///   await networkService.uploadSingleFile(image.path);
+  /// }
+  /// ```
+  /// 
+  /// API ENDPOINT (ví dụ):
+  /// POST https://api.example.com/upload
+  /// Content-Type: multipart/form-data
+  Future<Map<String, dynamic>> uploadSingleFile(String filePath) async {
+    return await DioErrorHandler.handleApiCall(
+      apiCall: () async {
+        // Tạo FormData - Dio sẽ tự động set Content-Type: multipart/form-data
+        final formData = FormData.fromMap({
+          // 'file' là tên field mà server mong đợi
+          // Có thể thay đổi theo API của bạn (ví dụ: 'image', 'avatar', 'document')
+          'file': await MultipartFile.fromFile(
+            filePath,
+            // Tùy chọn: Chỉ định tên file hiển thị
+            filename: filePath.split('/').last,
+          ),
+        });
+
+        // Gửi POST request với FormData
+        return _dio.post(
+          '/upload', // Thay bằng endpoint thật của bạn
+          data: formData,
+        );
+      },
+      parser: (data) => data as Map<String, dynamic>,
+      customErrorMessage: 'Không thể upload file',
+    );
+  }
+
+  
 }
